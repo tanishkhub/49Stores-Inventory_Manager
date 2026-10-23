@@ -47,16 +47,17 @@ async function request(method, path, { body, params, signal, headers } = {}) {
   if (method === 'GET' && !signal) {
     const cacheKey = url + (token || '');
     const entry = getCache.get(cacheKey);
-    const stale = entry && Date.now() - entry.fetchedAt > GET_CACHE_TTL;
-    if (entry && !stale) return entry.data;
+    // In-flight: return the existing promise so all callers share one request.
+    if (entry?.promise) return entry.promise;
+    // Fresh cache hit.
+    if (entry && Date.now() - entry.fetchedAt <= GET_CACHE_TTL) return entry.data;
+    // Stale or missing: fetch, store promise so concurrent calls share it.
     const promise = fetchRaw(method, url, { body, signal, headers, token })
       .then((data) => { getCache.set(cacheKey, { data, fetchedAt: Date.now(), promise: null }); return data; })
       .catch((err) => { getCache.delete(cacheKey); throw err; });
-    if (entry && stale) {
-      // Return stale immediately, revalidate in background.
-      getCache.set(cacheKey, { ...entry, promise });
-      return entry.data;
-    }
+    // Stale: return old data immediately, revalidate in background.
+    if (entry) { getCache.set(cacheKey, { ...entry, promise }); return entry.data; }
+    // No cache: store promise and await it.
     getCache.set(cacheKey, { data: null, fetchedAt: 0, promise });
     return promise;
   }
