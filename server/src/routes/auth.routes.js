@@ -5,7 +5,7 @@ const Page = require('../models/Page');
 const RevokedToken = require('../models/RevokedToken');
 const ApiError = require('../utils/ApiError');
 const { signToken } = require('../utils/token');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, invalidateUserCache } = require('../middleware/auth');
 const { getRolePermissions } = require('../rbac/permissions');
 
 const router = express.Router();
@@ -54,6 +54,7 @@ router.post('/login', async (req, res) => {
 router.post('/logout', authenticate, async (req, res) => {
   const { jti, exp } = req.token;
   if (jti) {
+    invalidateUserCache(jti);
     await RevokedToken.updateOne(
       { jti },
       { $setOnInsert: { jti, expiresAt: new Date((exp || Math.floor(Date.now() / 1000)) * 1000) } },

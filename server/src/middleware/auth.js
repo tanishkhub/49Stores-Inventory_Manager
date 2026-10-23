@@ -4,6 +4,21 @@ const ApiError = require('../utils/ApiError');
 const { verifyToken } = require('../utils/token');
 const { hasPermission } = require('../rbac/permissions');
 
+// Cache user+role by jti for 30 s to avoid 2 DB hits per request.
+const userCache = new Map(); // jti -> { user, expiresAt }
+const USER_CACHE_TTL = 30_000;
+
+function getCachedUser(jti) {
+  const entry = userCache.get(jti);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { userCache.delete(jti); return null; }
+  return entry.user;
+}
+function setCachedUser(jti, user) {
+  userCache.set(jti, { user, expiresAt: Date.now() + USER_CACHE_TTL });
+}
+function invalidateUserCache(jti) { userCache.delete(jti); }
+
 // Verifies the Bearer JWT and loads the user + role from MongoDB on every request, so role changes
 // and deactivation take effect immediately. Sets:
 //   req.user  = { id, name, email, roleId, role, storeIds, isSuperAdmin }
@@ -20,23 +35,30 @@ async function authenticate(req, res, next) {
     return next(ApiError.unauthorized('Invalid or expired token'));
   }
 
+  // Check revocation first (cheap indexed query).
   if (payload.jti && (await RevokedToken.exists({ jti: payload.jti }))) {
+    invalidateUserCache(payload.jti);
     return next(ApiError.unauthorized('Token has been revoked'));
   }
 
-  const user = await User.findById(payload.sub).populate('roleId').lean();
-  if (!user || !user.isActive || !user.roleId) return next(ApiError.unauthorized('Account is not active'));
+  let reqUser = payload.jti ? getCachedUser(payload.jti) : null;
+  if (!reqUser) {
+    const user = await User.findById(payload.sub).populate('roleId').lean();
+    if (!user || !user.isActive || !user.roleId) return next(ApiError.unauthorized('Account is not active'));
+    const role = user.roleId;
+    reqUser = {
+      id: String(user._id),
+      name: user.name,
+      email: user.email,
+      roleId: String(role._id),
+      role,
+      storeIds: (user.storeIds || []).map(String),
+      isSuperAdmin: Boolean(role.isSuperAdmin),
+    };
+    if (payload.jti) setCachedUser(payload.jti, reqUser);
+  }
 
-  const role = user.roleId;
-  req.user = {
-    id: String(user._id),
-    name: user.name,
-    email: user.email,
-    roleId: String(role._id),
-    role,
-    storeIds: (user.storeIds || []).map(String),
-    isSuperAdmin: Boolean(role.isSuperAdmin),
-  };
+  req.user = reqUser;
   req.token = { jti: payload.jti, exp: payload.exp };
   return next();
 }
@@ -55,4 +77,4 @@ function requireSuperAdmin(req, res, next) {
   return next(ApiError.forbidden('Super Admin only'));
 }
 
-module.exports = { authenticate, requirePermission, requireSuperAdmin };
+module.exports = { authenticate, requirePermission, requireSuperAdmin, invalidateUserCache };

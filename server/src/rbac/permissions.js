@@ -4,10 +4,29 @@ const { ACTIONS } = require('./actions');
 
 const ALL_TRUE = Object.freeze(Object.fromEntries(ACTIONS.map((a) => [a, true])));
 
+// Cache pages list and per-(roleId,pageKey,action) permission results in memory.
+// Pages only change on deploy; permissions change rarely. TTL: 60 s.
+const PAGE_CACHE_TTL = 60_000;
+const PERM_CACHE_TTL = 60_000;
+let pagesCache = null; // { pages: [], expiresAt }
+const permCache = new Map(); // `${roleId}:${pageKey}:${action}` -> { result, expiresAt }
+
+async function getActivePages() {
+  if (pagesCache && Date.now() < pagesCache.expiresAt) return pagesCache.pages;
+  const pages = await Page.find({ isActive: true }).lean();
+  pagesCache = { pages, expiresAt: Date.now() + PAGE_CACHE_TTL };
+  return pages;
+}
+
+function invalidatePermCache() {
+  permCache.clear();
+  pagesCache = null;
+}
+
 // Returns { [pageKey]: { view, add, update, delete } } for the given role, read live from MongoDB.
 // Actions a page does not support are always false.
 async function getRolePermissions(role) {
-  const pages = await Page.find({ isActive: true }).lean();
+  const pages = await getActivePages();
   const result = {};
   if (role && role.isSuperAdmin) {
     for (const page of pages) {
@@ -29,11 +48,24 @@ async function getRolePermissions(role) {
 
 async function hasPermission(role, pageKey, action = 'view') {
   if (!role) return false;
-  const page = await Page.findOne({ key: pageKey, isActive: true }).lean();
-  if (!page || !page.actions.includes(action)) return false;
-  if (role.isSuperAdmin) return true;
+  const cacheKey = `${role._id}:${pageKey}:${action}`;
+  const cached = permCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.result;
+
+  const pages = await getActivePages();
+  const page = pages.find((p) => p.key === pageKey);
+  if (!page || !page.actions.includes(action)) {
+    permCache.set(cacheKey, { result: false, expiresAt: Date.now() + PERM_CACHE_TTL });
+    return false;
+  }
+  if (role.isSuperAdmin) {
+    permCache.set(cacheKey, { result: true, expiresAt: Date.now() + PERM_CACHE_TTL });
+    return true;
+  }
   const rec = await Permission.findOne({ role: role._id, pageKey }).lean();
-  return Boolean(rec && rec.view && rec[action]);
+  const result = Boolean(rec && rec.view && rec[action]);
+  permCache.set(cacheKey, { result, expiresAt: Date.now() + PERM_CACHE_TTL });
+  return result;
 }
 
-module.exports = { getRolePermissions, hasPermission, ALL_TRUE };
+module.exports = { getRolePermissions, hasPermission, ALL_TRUE, invalidatePermCache };

@@ -6,7 +6,7 @@ const Page = require('../models/Page');
 const Permission = require('../models/Permission');
 const ApiError = require('../utils/ApiError');
 const { ACTIONS } = require('../rbac/actions');
-const { getRolePermissions } = require('../rbac/permissions');
+const { getRolePermissions, invalidatePermCache } = require('../rbac/permissions');
 const { authenticate, requirePermission, requireSuperAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -114,6 +114,7 @@ router.put('/:id/permissions', requireSuperAdmin, async (req, res) => {
     };
   });
   if (ops.length) await Permission.bulkWrite(ops);
+  invalidatePermCache();
   res.json({ ...role, permissions: await getRolePermissions(role) });
 });
 
