@@ -1,0 +1,24 @@
+{
+  "name": "inventory-poc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-only MERN inventory management PoC (server + client)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node run.mjs",
+    "check": "node run.mjs --check",
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "dev": "concurrently -k -n server,client -c blue,magenta \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "seed": "npm --prefix server run seed",
+    "seed:demo": "npm --prefix server run seed:demo",
+    "test": "npm --prefix server test && npm run test:runner",
+    "lint": "npm --prefix client run lint",
+    "build": "npm --prefix client run build",
+    "test:runner": "node --test \"scripts/runner/*.test.mjs\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}
