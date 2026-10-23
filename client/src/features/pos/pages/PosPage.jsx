@@ -62,7 +62,7 @@ export default function PosPage() {
     membership,
     customer: hasPhone(customer.phone) ? { phone: customer.phone } : undefined,
   });
-  const debouncedQuoteKey = useDebouncedValue(quoteKey, 250);
+  const debouncedQuoteKey = useDebouncedValue(quoteKey, 600);
   const [quote, setQuote] = useState(null);
   useEffect(() => {
     const body = JSON.parse(debouncedQuoteKey);

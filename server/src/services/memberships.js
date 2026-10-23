@@ -4,6 +4,22 @@ const ApiError = require('../utils/ApiError');
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+// Cache active membership plans — they change rarely (admin edits only).
+const PLAN_CACHE_TTL = 60_000;
+let planCache = null; // { plans: [], expiresAt }
+
+async function getActivePlans(ids) {
+  // If specific IDs requested, check cache first then fall back to DB for any missing.
+  if (!planCache || Date.now() > planCache.expiresAt) {
+    const plans = await MembershipPlan.find({ isActive: true }).lean();
+    planCache = { plans, expiresAt: Date.now() + PLAN_CACHE_TTL };
+  }
+  if (!ids) return planCache.plans;
+  const idSet = new Set(ids.map(String));
+  return planCache.plans.filter((p) => idSet.has(String(p._id)));
+}
+
+function invalidatePlanCache() { planCache = null; }
 function activeMemberships(customer, at = new Date()) {
   return (customer?.memberships || []).filter((m) => new Date(m.startsAt) <= at && new Date(m.endsAt) > at);
 }
@@ -58,7 +74,7 @@ function planDiscount(plan, lines) {
 async function bestDiscount(planIds, lines) {
   const none = { amount: 0, plan: null, perLine: lines.map(() => 0) };
   if (!planIds.length || !lines.length) return none;
-  const plans = await MembershipPlan.find({ _id: { $in: planIds } }).lean();
+  const plans = await getActivePlans(planIds);
   let best = null;
   for (const plan of plans) {
     const r = planDiscount(plan, lines);
@@ -78,7 +94,7 @@ async function bestDiscount(planIds, lines) {
 async function readMembershipPurchase(input) {
   if (!input || !input.planId) return null;
   if (!mongoose.isValidObjectId(input.planId)) throw ApiError.badRequest('Invalid membership plan');
-  const plan = await MembershipPlan.findOne({ _id: input.planId, isActive: true }).lean();
+  const [plan] = await getActivePlans([input.planId]);
   if (!plan) throw ApiError.badRequest('Membership plan not found or inactive');
   const months = Number(input.months);
   const option = plan.options.find((o) => o.months === months);
@@ -86,4 +102,4 @@ async function readMembershipPurchase(input) {
   return { plan, option };
 }
 
-module.exports = { activeMemberships, membershipStatus, membershipTerm, planDiscount, bestDiscount, readMembershipPurchase, addMonths, round2 };
+module.exports = { activeMemberships, membershipStatus, membershipTerm, planDiscount, bestDiscount, readMembershipPurchase, addMonths, round2, invalidatePlanCache };

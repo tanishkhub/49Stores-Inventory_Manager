@@ -3,6 +3,7 @@ const MembershipPlan = require('../models/MembershipPlan');
 const ApiError = require('../utils/ApiError');
 const { paginate, escapeRegex } = require('../utils/paginate');
 const { authenticate, requirePermission } = require('../middleware/auth');
+const { invalidatePlanCache } = require('../services/memberships');
 
 const router = express.Router();
 router.use(authenticate);
@@ -40,7 +41,9 @@ router.get('/', requirePermission('memberships', 'view'), async (req, res) => {
 
 router.post('/', requirePermission('memberships', 'add'), async (req, res) => {
   try {
-    res.status(201).json(await MembershipPlan.create(readPlan(req.body)));
+    const plan = await MembershipPlan.create(readPlan(req.body));
+    invalidatePlanCache();
+    res.status(201).json(plan);
   } catch (err) {
     if (err.code === 11000) throw ApiError.conflict('A plan with this name already exists');
     throw err;
@@ -51,6 +54,7 @@ router.put('/:id', requirePermission('memberships', 'update'), async (req, res) 
   try {
     const plan = await MembershipPlan.findByIdAndUpdate(req.params.id, readPlan(req.body), { new: true, runValidators: true });
     if (!plan) throw ApiError.notFound('Plan not found');
+    invalidatePlanCache();
     res.json(plan);
   } catch (err) {
     if (err.code === 11000) throw ApiError.conflict('A plan with this name already exists');
@@ -58,10 +62,10 @@ router.put('/:id', requirePermission('memberships', 'update'), async (req, res) 
   }
 });
 
-// Members keep their purchased validity; deleting only stops new sales of the plan.
 router.delete('/:id', requirePermission('memberships', 'delete'), async (req, res) => {
   const plan = await MembershipPlan.findByIdAndDelete(req.params.id);
   if (!plan) throw ApiError.notFound('Plan not found');
+  invalidatePlanCache();
   res.status(204).end();
 });
 

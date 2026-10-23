@@ -12,6 +12,15 @@ const { activeMemberships, membershipStatus, membershipTerm, bestDiscount, readM
 const MAX_LINES = 200;
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// Cache store lookups — stores change rarely and are read on every POS action.
+const STORE_CACHE_TTL = 60_000;
+const storeCache = new Map(); // storeId -> { store, expiresAt }
+
+function invalidateStoreCache(storeId) {
+  if (storeId) storeCache.delete(String(storeId));
+  else storeCache.clear();
+}
+
 // Super Admin may sell from any active store; everyone else only from their assigned stores.
 function storeFilterFor(user) {
   const filter = { isActive: true };
@@ -21,8 +30,14 @@ function storeFilterFor(user) {
 
 async function assertCanSellFrom(user, storeId) {
   if (!mongoose.isValidObjectId(storeId)) throw ApiError.badRequest('A valid storeId is required');
+  const cacheKey = `${storeId}:${user.isSuperAdmin ? 'admin' : user.storeIds.join(',')}`;
+  const cached = storeCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.store;
   const store = await Store.findOne({ $and: [storeFilterFor(user), { _id: storeId }] }).lean();
-  if (store) return store;
+  if (store) {
+    storeCache.set(cacheKey, { store, expiresAt: Date.now() + STORE_CACHE_TTL });
+    return store;
+  }
   if (!user.isSuperAdmin && !user.storeIds.includes(String(storeId))) throw ApiError.forbidden('You are not assigned to this store');
   throw ApiError.badRequest('Store not found or inactive');
 }
@@ -85,12 +100,14 @@ async function priceCart({ items, customer, purchase, now }) {
 
 // Same pricing as checkout without side effects, so the POS shows the exact amount before paying.
 async function quote(user, body = {}) {
-  const store = await assertCanSellFrom(user, body.storeId);
-  const purchase = await readMembershipPurchase(body.membership);
-  const lines = readLines(body.items, { allowEmpty: true });
-  const byId = await loadProducts(lines);
   const phone = normalizePhone(body.customer?.phone);
-  const customer = phone ? await Customer.findOne({ phone }).lean() : null;
+  const lines = readLines(body.items, { allowEmpty: true });
+  const [store, purchase, byId, customer] = await Promise.all([
+    assertCanSellFrom(user, body.storeId),
+    readMembershipPurchase(body.membership),
+    loadProducts(lines),
+    phone ? Customer.findOne({ phone }).lean() : Promise.resolve(null),
+  ]);
   const now = new Date();
   const priced = await priceCart({ items: buildLines(lines, byId), customer, purchase, now });
   const membership = purchase
@@ -114,21 +131,28 @@ async function checkout(user, body = {}) {
   const byId = await loadProducts(lines);
 
   const decremented = [];
-  for (const line of lines) {
-    const res = await InventoryItem.updateOne(
-      { productId: line.productId, storeId: store._id, quantity: { $gte: line.quantity } },
-      { $inc: { quantity: -line.quantity } },
-    );
-    if (res.modifiedCount !== 1) {
-      await restock(store._id, decremented);
-      const inv = await InventoryItem.findOne({ productId: line.productId, storeId: store._id }).lean();
-      const p = byId.get(line.productId);
-      throw new ApiError(409, `Not enough stock for ${p.name} (available: ${inv ? inv.quantity : 0})`, {
-        code: 'INSUFFICIENT_STOCK',
-        details: { productId: line.productId, available: inv ? inv.quantity : 0, requested: line.quantity },
-      });
-    }
-    decremented.push(line);
+  // Decrement stock for all lines in parallel — each touches a unique (productId, storeId) row.
+  // On any failure, restock everything that succeeded before throwing.
+  const results = await Promise.all(
+    lines.map((line) =>
+      InventoryItem.updateOne(
+        { productId: line.productId, storeId: store._id, quantity: { $gte: line.quantity } },
+        { $inc: { quantity: -line.quantity } },
+      ).then((res) => ({ line, res })),
+    ),
+  );
+  for (const { line, res } of results) {
+    if (res.modifiedCount === 1) { decremented.push(line); }
+  }
+  if (decremented.length !== lines.length) {
+    await restock(store._id, decremented);
+    const failed = results.find(({ res }) => res.modifiedCount !== 1);
+    const inv = await InventoryItem.findOne({ productId: failed.line.productId, storeId: store._id }).lean();
+    const p = byId.get(failed.line.productId);
+    throw new ApiError(409, `Not enough stock for ${p.name} (available: ${inv ? inv.quantity : 0})`, {
+      code: 'INSUFFICIENT_STOCK',
+      details: { productId: failed.line.productId, available: inv ? inv.quantity : 0, requested: failed.line.quantity },
+    });
   }
 
   try {
@@ -169,4 +193,4 @@ async function checkout(user, body = {}) {
   }
 }
 
-module.exports = { checkout, quote, storeFilterFor, assertCanSellFrom, restock, round2 };
+module.exports = { checkout, quote, storeFilterFor, assertCanSellFrom, restock, round2, invalidateStoreCache };

@@ -6,6 +6,7 @@ const Sale = require('../models/Sale');
 const ApiError = require('../utils/ApiError');
 const { paginate, escapeRegex } = require('../utils/paginate');
 const { authenticate, requirePermission } = require('../middleware/auth');
+const { invalidateStoreCache } = require('../services/sales');
 
 const router = express.Router();
 router.use(authenticate);
@@ -64,6 +65,7 @@ router.post('/', requirePermission('stores', 'add'), async (req, res) => {
 router.put('/:id', requirePermission('stores', 'update'), async (req, res) => {
   const store = await Store.findByIdAndUpdate(req.params.id, readStoreBody(req.body, { partial: true }), { new: true, runValidators: true });
   if (!store) throw ApiError.notFound('Store not found');
+  invalidateStoreCache(req.params.id);
   res.json(store);
 });
 
@@ -78,6 +80,7 @@ router.delete('/:id', requirePermission('stores', 'delete'), async (req, res) =>
     User.updateMany({ storeIds: store._id }, { $pull: { storeIds: store._id } }),
     store.deleteOne(),
   ]);
+  invalidateStoreCache(req.params.id);
   res.status(204).end();
 });
 

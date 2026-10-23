@@ -9,15 +9,16 @@ const ApiError = require('../utils/ApiError');
 const { escapeRegex } = require('../utils/paginate');
 const { authenticate, requirePermission } = require('../middleware/auth');
 const MembershipPlan = require('../models/MembershipPlan');
-const { checkout, quote, storeFilterFor, assertCanSellFrom } = require('../services/sales');
-const { membershipStatus } = require('../services/memberships');
+const { checkout, quote, storeFilterFor, assertCanSellFrom, invalidateStoreCache } = require('../services/sales');
+const { membershipStatus, invalidatePlanCache } = require('../services/memberships');
 const { findSaleForReturn, processReturn } = require('../services/returns');
 const { normalizePhone } = require('../services/customers');
 
 const router = express.Router();
 router.use(authenticate);
 
-const PRODUCT_FIELDS = 'name sku barcode barcodeType price category thumbnailBase64';
+const PRODUCT_FIELDS = 'name sku barcode barcodeType price category';
+const PRODUCT_FIELDS_WITH_THUMB = 'name sku barcode barcodeType price category thumbnailBase64';
 
 async function withStock(products, storeId) {
   const stock = await InventoryItem.find({ storeId, productId: { $in: products.map((p) => p._id) } }).lean();
@@ -114,7 +115,7 @@ router.get('/suggestions', requirePermission('pos', 'view'), async (req, res) =>
     merged.set(String(r._id), { ...(prev || { orders: 0, lastSoldAt: r.lastSoldAt }), score: (prev?.score || 0) + r.score * 3, reason: 'Their usual' });
   }
   const ids = [...merged.keys()];
-  const products = await Product.find({ _id: { $in: ids }, isActive: true }).select(PRODUCT_FIELDS).lean();
+  const products = await Product.find({ _id: { $in: ids }, isActive: true }).select(PRODUCT_FIELDS_WITH_THUMB).lean();
   const stocked = (await withStock(products, store._id)).filter((p) => p.stock > 0);
   const limit = Math.min(Number(req.query.limit) || 8, 20);
   const items = stocked
