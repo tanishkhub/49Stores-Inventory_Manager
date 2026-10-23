@@ -20,6 +20,17 @@ export class ApiError extends Error {
   }
 }
 
+// Stale-while-revalidate cache for GET requests.
+// Returns stale data immediately and revalidates in the background.
+const GET_CACHE_TTL = 30_000;
+const getCache = new Map(); // cacheKey -> { data, fetchedAt, promise }
+
+export function bustGetCache(pathPrefix) {
+  for (const key of getCache.keys()) {
+    if (key.startsWith(pathPrefix)) getCache.delete(key);
+  }
+}
+
 function buildUrl(path, params) {
   const url = new URL(`${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`, window.location.origin);
   for (const [key, value] of Object.entries(params || {})) {
@@ -30,9 +41,33 @@ function buildUrl(path, params) {
 
 async function request(method, path, { body, params, signal, headers } = {}) {
   const token = tokenStore.get();
+  const url = buildUrl(path, params);
+
+  // Stale-while-revalidate for GET requests (skip for abortable calls like infinite lists).
+  if (method === 'GET' && !signal) {
+    const cacheKey = url + (token || '');
+    const entry = getCache.get(cacheKey);
+    const stale = entry && Date.now() - entry.fetchedAt > GET_CACHE_TTL;
+    if (entry && !stale) return entry.data;
+    const promise = fetchRaw(method, url, { body, signal, headers, token })
+      .then((data) => { getCache.set(cacheKey, { data, fetchedAt: Date.now(), promise: null }); return data; })
+      .catch((err) => { getCache.delete(cacheKey); throw err; });
+    if (entry && stale) {
+      // Return stale immediately, revalidate in background.
+      getCache.set(cacheKey, { ...entry, promise });
+      return entry.data;
+    }
+    getCache.set(cacheKey, { data: null, fetchedAt: 0, promise });
+    return promise;
+  }
+
+  return fetchRaw(method, url, { body, signal, headers, token });
+}
+
+async function fetchRaw(method, url, { body, signal, headers, token } = {}) {
   let res;
   try {
-    res = await fetch(buildUrl(path, params), {
+    res = await fetch(url, {
       method,
       signal,
       headers: {

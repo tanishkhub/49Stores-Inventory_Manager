@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LogOut, X } from 'lucide-react';
+import { LogOut, RefreshCw, X } from 'lucide-react';
 import { useAuth } from '../../auth/hooks';
 import { visibleNavGroups } from '../../navConfig';
 import Logo from '../brand/Logo';
@@ -10,8 +11,15 @@ function initials(name = '') {
 
 // Rendered entirely from navConfig entries filtered by the user's RBAC permissions.
 export default function Sidebar({ onClose }) {
-  const { user, permissions, logout } = useAuth();
+  const { user, permissions, logout, refresh } = useAuth();
   const groups = visibleNavGroups(permissions);
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -56,6 +64,9 @@ export default function Sidebar({ onClose }) {
             <p className="truncate text-sm font-medium text-slate-900">{user?.name}</p>
             <p className="truncate text-xs text-slate-500">{user?.role?.name}</p>
           </div>
+          <button type="button" onClick={handleRefresh} disabled={refreshing} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50" title="Refresh permissions" aria-label="Refresh permissions">
+            <RefreshCw className={`h-4.5 w-4.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
           <button type="button" onClick={logout} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900" title="Log out" aria-label="Log out">
             <LogOut className="h-4.5 w-4.5" />
           </button>
