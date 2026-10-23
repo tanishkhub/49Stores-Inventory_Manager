@@ -71,6 +71,10 @@ export default function Sidebar({ onClose }) {
             <LogOut className="h-4.5 w-4.5" />
           </button>
         </div>
+        <p className="mt-3 text-center text-[10px] text-slate-400">
+          Made by{' '}
+          <a href="https://tanishk.49stores.com" target="_blank" rel="noreferrer" className="text-slate-500 underline-offset-2 hover:text-brand-600 hover:underline">Tanishk Shrivastava</a>
+        </p>
       </div>
     </div>
   );
