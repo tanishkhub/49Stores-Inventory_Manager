@@ -12,6 +12,8 @@
     "dev": "nodemon src/server.js",
     "seed": "node src/scripts/seed.js",
     "seed:demo": "node src/scripts/seed.js --demo",
+    "seed:demo49": "node src/scripts/seed49Demo.js",
+    "seed:demo49:remove": "node src/scripts/seed49Demo.js --remove",
     "test": "node --test --test-concurrency=1 \"test/**/*.test.js\""
   },
   "dependencies": {
