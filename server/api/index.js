@@ -1,4 +1,10 @@
 // Vercel serverless entry point. Locally the server runs via src/server.js instead.
+// Force Vercel's @vercel/nft bundler to trace packages only required inside
+// dynamically loaded route files (fs.readdirSync in src/routes/index.js):
+require('bcryptjs');
+require('jsonwebtoken');
+require('exceljs');
+
 const { createApp } = require('../src/app');
 const { ensureReady } = require('../src/bootstrap');
 
