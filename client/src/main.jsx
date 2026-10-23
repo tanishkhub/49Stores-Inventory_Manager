@@ -9,14 +9,15 @@ import './index.css';
 document.title = APP_NAME;
 
 console.log(
-  '%c49Stores%c Inventory Manager',
-  'background:#facc15;color:#0a0a0a;font-size:20px;font-weight:900;padding:6px 10px;border-radius:6px 0 0 6px',
-  'background:#0a0a0a;color:#facc15;font-size:20px;font-weight:700;padding:6px 10px;border-radius:0 6px 6px 0',
-);
-console.log(
-  '%cHandcrafted by Tanishk Shrivastava\n%chttps://tanishk.49stores.com',
-  'color:#a1a1aa;font-size:12px',
-  'color:#facc15;font-size:12px',
+  '%c 49STORES %c INVENTORY %c Tanishk Shrivastava %c tanishk.49stores.com ',
+  // 1. Glowing Teal Badge
+  'background: #0f766e; color: #ccfbf1; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 4px 0 0 4px; letter-spacing: 0.8px; line-height: 18px;',
+  // 2. Pill Tag
+  'background: #134e4a; color: #5eead4; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10px; font-weight: 700; padding: 6px 8px; border-top: 1px solid #115e59; border-bottom: 1px solid #115e59; line-height: 18px;',
+  // 3. Body text
+  'background: #09090b; color: #d4d4d8; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 11px; font-weight: 500; padding: 6px 12px; border-top: 1px solid #27272a; border-bottom: 1px solid #27272a; line-height: 18px;',
+  // 4. Subtle Bordered Link
+  'background: #09090b; color: #2dd4bf; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; font-weight: 600; padding: 6px 12px; border: 1px solid #27272a; border-left: 1px solid #14b8a6; border-radius: 0 4px 4px 0; line-height: 18px;'
 );
 
 createRoot(document.getElementById('root')).render(
