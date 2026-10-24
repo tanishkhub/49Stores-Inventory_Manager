@@ -68,4 +68,4 @@ async function hasPermission(role, pageKey, action = 'view') {
   return result;
 }
 
-module.exports = { getRolePermissions, hasPermission, ALL_TRUE, invalidatePermCache };
+module.exports = { getRolePermissions, hasPermission, getActivePages, ALL_TRUE, invalidatePermCache };

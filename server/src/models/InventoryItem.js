@@ -13,5 +13,8 @@ const inventoryItemSchema = new mongoose.Schema(
 
 inventoryItemSchema.index({ productId: 1, storeId: 1 }, { unique: true });
 inventoryItemSchema.index({ storeId: 1, quantity: 1 });
+// The inventory list sorts by updatedAt desc — without these, Mongo sorts in memory.
+inventoryItemSchema.index({ updatedAt: -1 });
+inventoryItemSchema.index({ storeId: 1, updatedAt: -1 });
 
 module.exports = mongoose.models.InventoryItem || mongoose.model('InventoryItem', inventoryItemSchema);

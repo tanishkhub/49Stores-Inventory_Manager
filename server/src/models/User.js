@@ -21,6 +21,9 @@ const userSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// The users list sorts by name asc — without this, Mongo sorts in memory.
+userSchema.index({ name: 1 });
+
 userSchema.set('toJSON', {
   transform(doc, ret) {
     delete ret.passwordHash;

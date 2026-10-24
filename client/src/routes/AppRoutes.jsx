@@ -4,6 +4,7 @@ import { RequireAuth, RequirePermission } from '../auth/guards';
 import { useAuth } from '../auth/hooks';
 import { navEntries, resolvePageComponent } from '../navConfig';
 import AppLayout from '../components/layout/AppLayout';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { PageSkeleton } from '../components/skeleton/Skeleton';
 import LoginPage from '../pages/LoginPage';
 import NotFoundPage from '../pages/NotFoundPage';
@@ -23,7 +24,8 @@ export default function AppRoutes() {
   const hasRootRoute = routeTable.some((r) => r.path === '/' && permissions[r.pageKey]?.[r.action]);
 
   return (
-    <Routes>
+    <ErrorBoundary>
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
@@ -34,9 +36,11 @@ export default function AppRoutes() {
               path={path}
               element={
                 <RequirePermission pageKey={pageKey} action={action}>
-                  <Suspense fallback={<PageSkeleton />}>
-                    <Component />
-                  </Suspense>
+                  <ErrorBoundary key={path}>
+                    <Suspense fallback={<PageSkeleton />}>
+                      <Component />
+                    </Suspense>
+                  </ErrorBoundary>
                 </RequirePermission>
               }
             />
@@ -44,6 +48,7 @@ export default function AppRoutes() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
-    </Routes>
+      </Routes>
+    </ErrorBoundary>
   );
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LogOut, RefreshCw, X } from 'lucide-react';
 import { useAuth } from '../../auth/hooks';
-import { visibleNavGroups } from '../../navConfig';
+import { prefetchPageComponent, visibleNavGroups } from '../../navConfig';
 import Logo from '../brand/Logo';
 
 function initials(name = '') {
@@ -35,11 +35,13 @@ export default function Sidebar({ onClose }) {
           <div key={group.name}>
             <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">{group.name}</p>
             <ul className="space-y-1">
-              {group.items.map(({ path, label, icon: Icon }) => (
+              {group.items.map(({ path, label, icon: Icon, component }) => (
                 <li key={path}>
                   <NavLink
                     to={path}
                     end
+                    onMouseEnter={() => prefetchPageComponent(component)}
+                    onFocus={() => prefetchPageComponent(component)}
                     className={({ isActive }) =>
                       `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
                         isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'

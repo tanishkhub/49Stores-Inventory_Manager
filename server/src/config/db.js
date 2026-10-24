@@ -10,7 +10,15 @@ async function connectDB(uri = env.mongodbUri) {
   if (!connectionPromise) {
     mongoose.set('strictQuery', true);
     connectionPromise = mongoose
-      .connect(uri, { serverSelectionTimeoutMS: 5000 })
+      .connect(uri, {
+        serverSelectionTimeoutMS: 5000,
+        // Serverless-friendly pool: every warm Vercel instance owns a pool, and the free
+        // Atlas tier (M0) caps total connections. 10 per instance is plenty for this API.
+        maxPoolSize: 10,
+        minPoolSize: 0,
+        socketTimeoutMS: 20_000,
+        waitQueueTimeoutMS: 5_000,
+      })
       .then(() => {
         const { host, port, name } = mongoose.connection;
         console.log(`[db] connected to ${host}:${port}/${name}`);

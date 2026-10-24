@@ -1,6 +1,5 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const ExcelJS = require('exceljs');
 const Sale = require('../models/Sale');
 const SaleReturn = require('../models/SaleReturn');
 const Store = require('../models/Store');
@@ -81,36 +80,40 @@ router.get('/', requirePermission('sales', 'view'), async (req, res) => {
 
 router.get('/summary', requirePermission('sales', 'view'), async (req, res) => {
   const { filter, productId } = buildFilter(req.query);
-  const [totals] = await Sale.aggregate([
-    { $match: filter },
-    { $group: { _id: null, salesCount: { $sum: 1 }, revenue: { $sum: '$total' }, units: { $sum: '$itemCount' }, discount: { $sum: '$discount' }, membershipRevenue: { $sum: '$membershipTotal' } } },
-  ]);
-  const topProducts = await Sale.aggregate([
-    { $match: filter },
-    { $unwind: '$items' },
-    ...(productId ? [{ $match: { 'items.productId': productId } }] : []),
-    { $group: { _id: '$items.productId', name: { $last: '$items.name' }, units: { $sum: '$items.quantity' }, revenue: { $sum: '$items.lineTotal' } } },
-    { $sort: { revenue: -1 } },
-    { $limit: 5 },
-  ]);
-  const byStore = await Sale.aggregate([
-    { $match: filter },
-    { $group: { _id: '$storeId', name: { $last: '$storeName' }, salesCount: { $sum: 1 }, revenue: { $sum: '$total' } } },
-    { $sort: { revenue: -1 } },
-  ]);
   const returnFilter = {};
   if (filter.storeId) returnFilter.storeId = filter.storeId;
   if (filter.createdAt) returnFilter.createdAt = filter.createdAt;
-  const [ret] = await SaleReturn.aggregate([
-    { $match: returnFilter },
-    {
-      $group: {
-        _id: null,
-        count: { $sum: 1 },
-        refunded: { $sum: { $cond: [{ $lt: ['$balance', 0] }, { $multiply: ['$balance', -1] }, 0] } },
-        collected: { $sum: { $cond: [{ $gt: ['$balance', 0] }, '$balance', 0] } },
+  // Four independent aggregations — run them in parallel; on a remote Atlas cluster each
+  // sequential round-trip adds hundreds of ms to the dashboard load.
+  const [[totals], topProducts, byStore, [ret]] = await Promise.all([
+    Sale.aggregate([
+      { $match: filter },
+      { $group: { _id: null, salesCount: { $sum: 1 }, revenue: { $sum: '$total' }, units: { $sum: '$itemCount' }, discount: { $sum: '$discount' }, membershipRevenue: { $sum: '$membershipTotal' } } },
+    ]),
+    Sale.aggregate([
+      { $match: filter },
+      { $unwind: '$items' },
+      ...(productId ? [{ $match: { 'items.productId': productId } }] : []),
+      { $group: { _id: '$items.productId', name: { $last: '$items.name' }, units: { $sum: '$items.quantity' }, revenue: { $sum: '$items.lineTotal' } } },
+      { $sort: { revenue: -1 } },
+      { $limit: 5 },
+    ]),
+    Sale.aggregate([
+      { $match: filter },
+      { $group: { _id: '$storeId', name: { $last: '$storeName' }, salesCount: { $sum: 1 }, revenue: { $sum: '$total' } } },
+      { $sort: { revenue: -1 } },
+    ]),
+    SaleReturn.aggregate([
+      { $match: returnFilter },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          refunded: { $sum: { $cond: [{ $lt: ['$balance', 0] }, { $multiply: ['$balance', -1] }, 0] } },
+          collected: { $sum: { $cond: [{ $gt: ['$balance', 0] }, '$balance', 0] } },
+        },
       },
-    },
+    ]),
   ]);
   const round = (n) => Math.round((n || 0) * 100) / 100;
   res.json({
@@ -240,6 +243,9 @@ router.get('/export', requirePermission('sales', 'view'), async (req, res) => {
   }
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  // Required lazily: exceljs is several MB and only this endpoint needs it — loading it at
+  // module scope would slow every (serverless) cold start for no benefit.
+  const ExcelJS = require('exceljs');
   const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: res, useStyles: true });
   const sheet = workbook.addWorksheet('Sales lines', { views: [{ state: 'frozen', ySplit: 1 }] });
   sheet.columns = LINE_COLUMNS;

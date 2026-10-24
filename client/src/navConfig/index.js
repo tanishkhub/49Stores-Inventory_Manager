@@ -37,6 +37,13 @@ export function resolvePageComponent(component) {
   return lazyCache.get(component);
 }
 
+// Downloads a page's lazy chunk before navigation (called on sidebar hover/focus) so the
+// first visit to a page doesn't wait on the network before data fetching can even start.
+export function prefetchPageComponent(component) {
+  if (typeof component !== 'string') return;
+  pageModules[`../features/${component}.jsx`]?.();
+}
+
 function collectEntries() {
   const entries = [];
   const seenPaths = new Map();

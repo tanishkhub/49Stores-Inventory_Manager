@@ -14,11 +14,15 @@ const round2 = (n) => Math.round(n * 100) / 100;
 
 // Cache store lookups — stores change rarely and are read on every POS action.
 const STORE_CACHE_TTL = 60_000;
-const storeCache = new Map(); // storeId -> { store, expiresAt }
+const storeCache = new Map(); // `${storeId}:${userKey}` -> { store, expiresAt }
 
 function invalidateStoreCache(storeId) {
-  if (storeId) storeCache.delete(String(storeId));
-  else storeCache.clear();
+  if (!storeId) return storeCache.clear();
+  // Entries are keyed `${storeId}:${userKey}` — delete every key for this store.
+  const prefix = `${storeId}:`;
+  for (const key of storeCache.keys()) {
+    if (key.startsWith(prefix)) storeCache.delete(key);
+  }
 }
 
 // Super Admin may sell from any active store; everyone else only from their assigned stores.

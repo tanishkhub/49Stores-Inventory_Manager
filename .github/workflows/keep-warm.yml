@@ -1,0 +1,30 @@
+# Keeps the Vercel serverless API warm on the free plan.
+# Vercel freezes idle functions; the next request then pays the cold-start cost
+# (module load + Atlas TLS handshake + bootstrap ≈ several seconds on M0).
+# A request every 5 minutes keeps one instance warm, so users rarely hit a cold start.
+#
+# SETUP (one-time): add the health URL as a repository variable
+#   GitHub repo → Settings → Secrets and variables → Actions → Variables → New variable
+#   Name:  API_HEALTH_URL
+#   Value: https://<your-api-domain>/api/health      (e.g. https://api.49stores.com/api/health)
+#
+# Note: on PRIVATE repos, scheduled runs consume Actions minutes (~15 runs/hour).
+# If that's a concern, point a free external pinger (UptimeRobot / cron-job.org)
+# at the same URL every 5 minutes instead and delete this workflow.
+name: Keep API warm
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # manual "Run workflow" button for testing
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping API health
+        run: |
+          if [ -z "${{ vars.API_HEALTH_URL }}" ]; then
+            echo "::warning::API_HEALTH_URL repository variable is not set — skipping ping."
+            exit 0
+          fi
+          curl -fsS -o /dev/null -w 'health check: %{http_code} in %{time_total}s\n' "${{ vars.API_HEALTH_URL }}"

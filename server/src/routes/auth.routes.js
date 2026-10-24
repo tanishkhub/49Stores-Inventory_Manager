@@ -1,12 +1,11 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
-const Page = require('../models/Page');
 const RevokedToken = require('../models/RevokedToken');
 const ApiError = require('../utils/ApiError');
 const { signToken } = require('../utils/token');
 const { authenticate, invalidateUserCache } = require('../middleware/auth');
-const { getRolePermissions } = require('../rbac/permissions');
+const { getRolePermissions, getActivePages } = require('../rbac/permissions');
 
 const router = express.Router();
 
@@ -14,7 +13,9 @@ async function buildSession(userId) {
   const user = await User.findById(userId).populate('roleId').lean();
   const role = user.roleId;
   const permissions = await getRolePermissions(role);
-  const pages = await Page.find({ isActive: true }).sort({ order: 1, label: 1 }).lean();
+  // Use the shared 60 s page cache — Page.find() would otherwise add an extra Atlas
+  // round-trip to every /auth/me and login. Sort a copy so the cached array isn't mutated.
+  const pages = [...(await getActivePages())].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
   return {
     user: {
       id: String(user._id),
