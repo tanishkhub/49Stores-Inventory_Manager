@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ImagePlus, Pencil, Plus, RefreshCw, Search, Trash2, WandSparkles, X } from 'lucide-react';
+import { Camera, ImagePlus, Link2, Pencil, Plus, RefreshCw, Search, Trash2, WandSparkles, X } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { usePermission } from '../../../auth/hooks';
 import { useApi } from '../../../hooks/useApi';
@@ -12,7 +12,9 @@ import Alert from '../../../components/ui/Alert';
 import BarcodeSvg from '../../shared/BarcodeSvg';
 import ProductThumb from '../../shared/ProductThumb';
 import { formatMoney } from '../../shared/format';
-import { fileToProductImages } from '../../shared/image';
+import { fileToProductImages, fileToProductImageBlob, urlToProductImageBlob } from '../../shared/image';
+import { uploadToCloudinary, fullUrl } from '../../shared/cloudinary';
+import CameraCapture from '../../shared/CameraCapture';
 
 const EMPTY = { name: '', sku: '', price: '', category: '', description: '', barcodeMode: 'auto', barcode: '', barcodeType: 'CODE128', isActive: true };
 
@@ -89,7 +91,7 @@ export default function ProductsPage() {
                 <tr key={p._id} className="border-t border-slate-100 hover:bg-slate-50/60">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <ProductThumb src={p.thumbnailBase64} />
+                      <ProductThumb src={p.imageUrl || p.thumbnailBase64} />
                       <div className="min-w-0">
                         <p className="truncate font-medium text-slate-900">{p.name}</p>
                         <p className="truncate text-xs text-slate-500 md:hidden">{p.sku}</p>
@@ -151,25 +153,67 @@ export default function ProductsPage() {
 function ProductFormModal({ initial, onClose, onSaved }) {
   const isNew = !initial._id;
   const [form, setForm] = useState({ ...EMPTY, ...initial, price: initial.price ?? '' });
-  const [image, setImage] = useState({ imageBase64: initial.imageBase64 || '', thumbnailBase64: initial.thumbnailBase64 || '', changed: false });
+  const [image, setImage] = useState({
+    imageUrl: initial.imageUrl || '',
+    imagePublicId: initial.imagePublicId || '',
+    imageBase64: initial.imageBase64 || '',
+    thumbnailBase64: initial.thumbnailBase64 || '',
+    changed: false,
+  });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState('');
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
   const loading = initial.loadingImage;
+  const previewSrc = image.imageUrl ? fullUrl(image.imageUrl, 480) : image.imageBase64 || image.thumbnailBase64;
+
+  const [urlInput, setUrlInput] = useState({ open: false, value: '' });
+  const [cameraOpen, setCameraOpen] = useState(false);
+
+  // Shared pipeline: any source (file, URL, camera) ends as a resized JPEG blob, then a
+  // Cloudinary upload — with the legacy base64 path as fallback when uploads aren't set up.
+  async function applyBlob(blob) {
+    setBusy('image');
+    setError('');
+    try {
+      const uploaded = await uploadToCloudinary(blob);
+      setImage({ imageUrl: uploaded.imageUrl, imagePublicId: uploaded.imagePublicId, imageBase64: '', thumbnailBase64: '', changed: true });
+    } catch (err) {
+      // Cloudinary not configured on the server → keep the legacy base64 path working.
+      if (err.status === 404) {
+        try {
+          setImage({ imageUrl: '', imagePublicId: '', ...(await fileToProductImages(blob)), changed: true });
+        } catch (e2) {
+          setError(e2.message);
+        }
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setBusy('');
+    }
+  }
 
   async function onFile(e) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    setBusy('image');
-    setError('');
     try {
-      setImage({ ...(await fileToProductImages(file)), changed: true });
+      await applyBlob(await fileToProductImageBlob(file));
     } catch (err) {
       setError(err.message);
-    } finally {
-      setBusy('');
+    }
+  }
+
+  async function onLoadUrl() {
+    const url = urlInput.value.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) return setError('Enter an image URL starting with http:// or https://');
+    try {
+      await applyBlob(await urlToProductImageBlob(url));
+      setUrlInput({ open: false, value: '' });
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -199,7 +243,13 @@ function ProductFormModal({ initial, onClose, onSaved }) {
       barcodeType: form.barcodeType,
       barcodeMode: form.barcodeMode,
       ...(form.barcodeMode === 'manual' ? { barcode: form.barcode } : {}),
-      ...(image.changed ? { imageBase64: image.imageBase64, thumbnailBase64: image.thumbnailBase64 } : {}),
+      ...(image.changed
+        ? image.imageUrl
+          ? { imageUrl: image.imageUrl, imagePublicId: image.imagePublicId }
+          : image.imageBase64
+            ? { imageBase64: image.imageBase64, thumbnailBase64: image.thumbnailBase64 }
+            : { imageUrl: '', imagePublicId: '' }
+        : {}),
     };
     if (!isNew && form.barcodeMode === 'auto') body.regenerateBarcode = true;
     try {
@@ -234,19 +284,19 @@ function ProductFormModal({ initial, onClose, onSaved }) {
             <Skeleton className="aspect-square w-full" />
           ) : (
             <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50">
-              {image.imageBase64 || image.thumbnailBase64 ? (
-                <img src={image.imageBase64 || image.thumbnailBase64} alt="Product preview" className="h-full w-full object-contain" />
+              {previewSrc ? (
+                <img src={previewSrc} alt="Product preview" className="h-full w-full object-contain" />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-400">
                   <ImagePlus className="h-8 w-8" />
                   <span className="text-xs">No image</span>
                 </div>
               )}
-              {(image.imageBase64 || image.thumbnailBase64) && (
+              {previewSrc && (
                 <button
                   type="button"
                   className="absolute right-2 top-2 rounded-full bg-white/90 p-1 text-slate-600 shadow hover:text-red-600"
-                  onClick={() => setImage({ imageBase64: '', thumbnailBase64: '', changed: true })}
+                  onClick={() => setImage({ imageUrl: '', imagePublicId: '', imageBase64: '', thumbnailBase64: '', changed: true })}
                   aria-label="Remove image"
                 >
                   <X className="h-4 w-4" />
@@ -254,11 +304,40 @@ function ProductFormModal({ initial, onClose, onSaved }) {
               )}
             </div>
           )}
-          <label className="btn-secondary mt-2 w-full cursor-pointer">
-            <ImagePlus className="h-4 w-4" /> {busy === 'image' ? 'Processing…' : 'Upload image'}
-            <input type="file" accept="image/*" className="sr-only" onChange={onFile} disabled={loading} />
-          </label>
-          <p className="mt-1 text-xs text-slate-400">Resized in the browser and stored as Base64 in MongoDB.</p>
+          <div className="mt-2 flex gap-2">
+            <label className="btn-secondary flex-1 cursor-pointer justify-center">
+              <ImagePlus className="h-4 w-4" /> {busy === 'image' ? 'Processing…' : 'Upload'}
+              <input type="file" accept="image/*" className="sr-only" onChange={onFile} disabled={loading || Boolean(busy)} />
+            </label>
+            <button type="button" className="btn-secondary flex-1 justify-center" onClick={() => setUrlInput((v) => ({ ...v, open: !v.open }))} disabled={loading || Boolean(busy)}>
+              <Link2 className="h-4 w-4" /> URL
+            </button>
+            <button type="button" className="btn-secondary flex-1 justify-center" onClick={() => setCameraOpen(true)} disabled={loading || Boolean(busy)}>
+              <Camera className="h-4 w-4" /> Camera
+            </button>
+          </div>
+          {urlInput.open && (
+            <div className="mt-2 flex gap-2">
+              <input
+                className="input min-w-0 flex-1"
+                placeholder="https://example.com/image.jpg"
+                value={urlInput.value}
+                onChange={(e) => setUrlInput((v) => ({ ...v, value: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), onLoadUrl())}
+              />
+              <button type="button" className="btn-secondary" onClick={onLoadUrl} disabled={busy === 'image'}>Load</button>
+            </div>
+          )}
+          {cameraOpen && (
+            <CameraCapture
+              onClose={() => setCameraOpen(false)}
+              onCapture={async (blob) => {
+                setCameraOpen(false);
+                await applyBlob(blob);
+              }}
+            />
+          )}
+          <p className="mt-1 text-xs text-slate-400">File, image URL, or camera — resized in the browser, hosted on Cloudinary CDN.</p>
         </div>
 
         <div className="grid content-start gap-4 sm:grid-cols-2">

@@ -19,7 +19,7 @@ function loadImage(file) {
   });
 }
 
-function render(img, maxSide, quality) {
+function drawToCanvas(img, maxSide) {
   const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
@@ -28,7 +28,21 @@ function render(img, maxSide, quality) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', quality);
+  return canvas;
+}
+
+function render(img, maxSide, quality) {
+  return drawToCanvas(img, maxSide).toDataURL('image/jpeg', quality);
+}
+
+function renderBlob(img, maxSide, quality) {
+  return new Promise((resolve, reject) =>
+    drawToCanvas(img, maxSide).toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('This file could not be converted'))),
+      'image/jpeg',
+      quality,
+    ),
+  );
 }
 
 export async function fileToProductImages(file) {
@@ -41,4 +55,29 @@ export async function fileToProductImages(file) {
     if (imageBase64.length <= MAX_IMAGE_CHARS) break;
   }
   return { imageBase64, thumbnailBase64: render(img, 160, 0.7) };
+}
+
+// Resized JPEG blob for direct upload to Cloudinary — the DB-size cap doesn't apply there.
+export async function fileToProductImageBlob(file) {
+  if (!file.type.startsWith('image/')) throw new Error('Please choose an image file (PNG, JPEG, WebP or GIF)');
+  if (file.size > MAX_SOURCE_BYTES) throw new Error('Image is larger than 15 MB');
+  const img = await loadImage(file);
+  return renderBlob(img, 1200, 0.85);
+}
+
+// Downloads an image URL, normalizes it to a resized JPEG blob for upload. Everything is
+// re-hosted on our CDN so product images never depend on (or hotlink) a third-party site.
+export async function urlToProductImageBlob(url) {
+  let blob;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    blob = await res.blob();
+  } catch {
+    throw new Error('Could not download that image — the site may block direct linking');
+  }
+  if (!blob.type.startsWith('image/')) throw new Error('That URL does not point to an image');
+  if (blob.size > MAX_SOURCE_BYTES) throw new Error('Image is larger than 15 MB');
+  const img = await loadImage(blob);
+  return renderBlob(img, 1200, 0.85);
 }

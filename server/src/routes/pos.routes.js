@@ -18,7 +18,7 @@ const router = express.Router();
 router.use(authenticate);
 
 const PRODUCT_FIELDS = 'name sku barcode barcodeType price category';
-const PRODUCT_FIELDS_WITH_THUMB = 'name sku barcode barcodeType price category thumbnailBase64';
+const PRODUCT_FIELDS_WITH_THUMB = 'name sku barcode barcodeType price category thumbnailBase64 imageUrl';
 
 async function withStock(products, storeId) {
   const stock = await InventoryItem.find({ storeId, productId: { $in: products.map((p) => p._id) } }).lean();

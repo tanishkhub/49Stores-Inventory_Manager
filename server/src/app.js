@@ -18,6 +18,9 @@ function createApp() {
         return callback(null, false);
       },
       credentials: true,
+      // Cache preflights: every authenticated request otherwise costs an extra OPTIONS
+      // round-trip (and potentially a serverless cold start) before the real call.
+      maxAge: 86_400,
     }),
   );
   app.use(express.json({ limit: '1mb' }));

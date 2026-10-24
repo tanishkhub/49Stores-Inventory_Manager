@@ -55,10 +55,10 @@ async function request(method, path, { body, params, signal, headers } = {}) {
     const promise = fetchRaw(method, url, { body, signal, headers, token })
       .then((data) => { getCache.set(cacheKey, { data, fetchedAt: Date.now(), promise: null }); return data; })
       .catch((err) => { getCache.delete(cacheKey); throw err; });
-    // Stale: return old data immediately, revalidate in background.
-    if (entry) { getCache.set(cacheKey, { ...entry, promise }); return entry.data; }
-    // No cache: store promise and await it.
-    getCache.set(cacheKey, { data: null, fetchedAt: 0, promise });
+    getCache.set(cacheKey, { data: entry?.data ?? null, fetchedAt: entry?.fetchedAt ?? 0, promise });
+    // Always return the in-flight promise: returning stale data here would leave the
+    // caller permanently on old data — the fresh response would only populate the cache
+    // and never reach the component that asked for it.
     return promise;
   }
 

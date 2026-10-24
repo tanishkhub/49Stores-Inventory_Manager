@@ -6,6 +6,8 @@ const ApiError = require('../utils/ApiError');
 const { paginate, escapeRegex } = require('../utils/paginate');
 const { authenticate, requirePermission } = require('../middleware/auth');
 const { normalizeBarcode, generateUniqueBarcode, DEFAULT_TYPE } = require('../services/barcode');
+const env = require('../config/env');
+const { destroyAssetSoon } = require('../services/cloudinary');
 
 const router = express.Router();
 router.use(authenticate);
@@ -44,6 +46,26 @@ function readProductBody(body = {}, { partial = false } = {}) {
   if (body.imageBase64 !== undefined) out.imageBase64 = readImage(body.imageBase64, MAX_IMAGE_CHARS, 'Image');
   if (body.thumbnailBase64 !== undefined) out.thumbnailBase64 = readImage(body.thumbnailBase64, MAX_THUMB_CHARS, 'Thumbnail');
   if (out.imageBase64 === '' && body.thumbnailBase64 === undefined) out.thumbnailBase64 = '';
+  // Cloudinary path (preferred): a signed-upload URL + public_id from /api/uploads/sign.
+  // Base64 writes clear the URL fields and vice versa — exactly one storage mode per product.
+  if (body.imageUrl !== undefined) {
+    const url = String(body.imageUrl ?? '').trim();
+    const publicId = String(body.imagePublicId ?? '').trim();
+    if (url) {
+      const cloud = env.cloudinary.cloudName;
+      if (!cloud || !url.startsWith(`https://res.cloudinary.com/${cloud}/`)) {
+        throw ApiError.badRequest('imageUrl is not from the configured Cloudinary cloud');
+      }
+      if (!/^[\w\-/.]{1,200}$/.test(publicId)) throw ApiError.badRequest('Invalid imagePublicId');
+    }
+    out.imageUrl = url;
+    out.imagePublicId = url ? publicId : '';
+    out.imageBase64 = '';
+    out.thumbnailBase64 = '';
+  } else if (out.imageBase64 !== undefined) {
+    out.imageUrl = '';
+    out.imagePublicId = '';
+  }
   return out;
 }
 
@@ -105,6 +127,9 @@ router.put('/:id', requirePermission('products', 'update'), async (req, res) => 
   const barcode = await resolveBarcode(req.body, existing);
   if (barcode) Object.assign(data, { barcode: barcode.value, barcodeType: barcode.type });
   const product = await Product.findByIdAndUpdate(existing._id, data, { new: true, runValidators: true }).lean();
+  if (data.imageUrl !== undefined && existing.imagePublicId && existing.imagePublicId !== data.imagePublicId) {
+    destroyAssetSoon(existing.imagePublicId);
+  }
   res.json(product);
 });
 
@@ -115,6 +140,7 @@ router.delete('/:id', requirePermission('products', 'delete'), async (req, res) 
     throw ApiError.conflict('This product has sales history. Mark it inactive instead of deleting it.');
   }
   await Promise.all([InventoryItem.deleteMany({ productId: product._id }), product.deleteOne()]);
+  destroyAssetSoon(product.imagePublicId);
   res.status(204).end();
 });
 

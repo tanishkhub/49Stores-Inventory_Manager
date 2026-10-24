@@ -252,7 +252,7 @@ export default function PosPage() {
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => { addProduct(p); setCode(''); setSuggestions2([]); focusScan(); }}
                       >
-                        <ProductThumb src={p.thumbnailBase64} size="h-8 w-8" />
+                        <ProductThumb src={p.imageUrl || p.thumbnailBase64} size="h-8 w-8" />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">{p.name}</span>
                           <span className="block truncate font-mono text-xs text-slate-500">{p.sku} · {p.barcode}</span>
@@ -282,7 +282,7 @@ export default function PosPage() {
                 <p className="px-3 py-2 text-xs font-medium text-slate-500">Several products match — pick one:</p>
                 {lookup.choices.map((p) => (
                   <button key={p._id} type="button" className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { addProduct(p); focusScan(); }}>
-                    <ProductThumb src={p.thumbnailBase64} size="h-8 w-8" />
+                    <ProductThumb src={p.imageUrl || p.thumbnailBase64} size="h-8 w-8" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{p.name}</span>
                       <span className="block truncate font-mono text-xs text-slate-500">{p.sku} · {p.barcode}</span>
@@ -311,7 +311,7 @@ export default function PosPage() {
                     onClick={() => { addProduct(p); focusScan(); }}
                     title={`${p.orders} recent order${p.orders === 1 ? '' : 's'}`}
                   >
-                    <ProductThumb src={p.thumbnailBase64} size="h-9 w-9" />
+                    <ProductThumb src={p.imageUrl || p.thumbnailBase64} size="h-9 w-9" />
                     <span className="min-w-0">
                       <span className="block truncate font-medium">{p.name}</span>
                       <span className="block text-xs text-slate-500">{formatMoney(p.price)} · <span className={p.reason === 'Their usual' ? 'font-medium text-slate-900' : ''}>{p.reason}</span></span>
@@ -331,7 +331,7 @@ export default function PosPage() {
             <ul className="divide-y divide-slate-100">
               {cart.map(({ product: p, quantity }) => (
                 <li key={p._id} className="flex items-start gap-3 px-4 py-3 sm:items-center">
-                  <ProductThumb src={p.thumbnailBase64} />
+                  <ProductThumb src={p.imageUrl || p.thumbnailBase64} />
                   <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium text-slate-900">{p.name}</p>

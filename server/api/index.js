@@ -15,7 +15,7 @@ const app = createApp();
 
 module.exports = async (req, res) => {
   try {
-    await ensureReady();
+    await ensureReady({ deferSync: true });
   } catch (err) {
     console.error('[vercel] startup failed:', err.message);
     res.statusCode = 503;

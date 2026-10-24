@@ -17,7 +17,10 @@ async function paginate(Model, filter, query, { sort = { createdAt: -1, _id: -1 
   if (select) cursor = cursor.select(select);
   if (populate) cursor = cursor.populate(populate);
   if (lean) cursor = cursor.lean();
-  const [items, total] = await Promise.all([cursor, Model.countDocuments(filter)]);
+  // Unfiltered counts use collection metadata (no scan) — meaningful on a free-tier
+  // cluster where countDocuments is the most expensive part of every list call.
+  const countQuery = filter && Object.keys(filter).length ? Model.countDocuments(filter) : Model.estimatedDocumentCount();
+  const [items, total] = await Promise.all([cursor, countQuery]);
   return { items, page, limit, total, hasMore: skip + items.length < total };
 }
 

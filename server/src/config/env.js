@@ -17,6 +17,16 @@ const env = {
     email: (process.env.SEED_ADMIN_EMAIL || 'admin@inventory.local').toLowerCase(),
     password: process.env.SEED_ADMIN_PASSWORD || 'Admin@12345',
   },
+  // Product images upload straight from the browser to Cloudinary (signed by /api/uploads/sign).
+  // When unset, products keep using the base64-in-Mongo image path.
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    enabled: Boolean(
+      process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET,
+    ),
+  },
 };
 
 if (!env.jwtSecret) {

@@ -13,8 +13,11 @@ const productSchema = new mongoose.Schema(
     price: { type: Number, required: true, min: 0 },
     category: { type: String, trim: true, default: '', maxlength: 80 },
     // Base64 data URLs, resized client-side. The full image is only returned by GET /api/products/:id.
+    // Legacy path — new writes prefer the Cloudinary fields below (CDN-delivered, transformed on the fly).
     imageBase64: { type: String, default: '', select: false },
     thumbnailBase64: { type: String, default: '' },
+    imageUrl: { type: String, default: '', maxlength: 500 },
+    imagePublicId: { type: String, default: '', maxlength: 200 },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true },

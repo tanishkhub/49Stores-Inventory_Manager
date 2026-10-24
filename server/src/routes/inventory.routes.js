@@ -11,7 +11,7 @@ const router = express.Router();
 router.use(authenticate);
 
 const POPULATE = [
-  { path: 'productId', select: 'name sku barcode barcodeType price category thumbnailBase64 isActive' },
+  { path: 'productId', select: 'name sku barcode barcodeType price category thumbnailBase64 imageUrl isActive' },
   { path: 'storeId', select: 'name code isActive' },
 ];
 
